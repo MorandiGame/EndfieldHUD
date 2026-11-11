@@ -348,6 +348,12 @@ void contracts() {
         check(w[M::display].performAccessibilityAction("windowsIdleHideSeconds:"+std::to_string(seconds),w.now),"The short idle timeout can be selected");
         check(w.controller->committed().number("windowsIdleHideSeconds")==seconds,"The selected idle timeout persists");
     }
+    check(w.control(M::display,"windowsDesktopWakeIdleSeconds").label=="Idle before desktop mouse wake","The independent wake threshold is visible in Display settings");
+    for(const int seconds:{5,10,30}){
+        w.activate(M::display,"windowsDesktopWakeIdleSeconds");
+        check(w[M::display].performAccessibilityAction("windowsDesktopWakeIdleSeconds:"+std::to_string(seconds),w.now),"The desktop-away threshold can be selected");
+        check(w.controller->committed().number("windowsDesktopWakeIdleSeconds")==seconds&&w.controller->committed().number("windowsIdleHideSeconds")==60,"Wake threshold persists independently of the hide threshold");
+    }
     check(w.control(M::display,"windowsGraphicsReleaseSeconds").label=="Release hidden graphics after","Hidden graphics policy is visible");
     check(w.control(M::display,"windowsFrameRateLimit").label=="Frame rate limit","The frame cap is configurable");
     w.activate(M::display,"desktopResume");

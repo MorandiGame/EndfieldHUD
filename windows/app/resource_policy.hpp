@@ -9,7 +9,7 @@ namespace endfield::app {
 struct ResourcePolicy {
     double idleSeconds{60}, wakeIdleSeconds{30}, releaseSeconds{1}, frameRate{60};
     bool desktopResume{true}, pauseTelemetry{true};
-    bool observesPresence(bool shown) const { return idleSeconds>0 && (shown||desktopResume); }
+    bool observesPresence(bool shown) const { return shown ? idleSeconds>0 : desktopResume; }
     static ResourcePolicy from(const ehud::data::Settings& s) {
         ResourcePolicy p;
         const auto number = [&](const char* key, double fallback, double maximum) {
@@ -17,6 +17,7 @@ struct ResourcePolicy {
             return v.isNumber() && std::isfinite(v.number()) ? std::clamp(v.number(), 0., maximum) : fallback;
         };
         p.idleSeconds = number("windowsIdleHideSeconds", 60, 3600);
+        p.wakeIdleSeconds = std::max(1., number("windowsDesktopWakeIdleSeconds", 30, 3600));
         p.releaseSeconds = number("windowsGraphicsReleaseSeconds", 1, 600);
         p.frameRate = number("windowsFrameRateLimit", 60, 240);
         const auto& resume = s.fields["windowsDesktopResume"];
@@ -37,7 +38,7 @@ public:
     bool wakeArmed() const { return wakeArmed_; }
     Action sample(const ResourcePolicy& p, double now, double idle, bool moved,
                   bool desktop, bool shown, bool canAct) {
-        if (p.idleSeconds <= 0) { dismissed(); return Action::none; }
+        if (!p.observesPresence(shown)) { dismissed(); return Action::none; }
         // Time spent in another application, a modal or a suspended session
         // never contributes to the desktop's automatic-hide deadline.
         if (!desktop || !canAct) { pause(); return Action::none; }
@@ -50,7 +51,7 @@ public:
         }
         wakeArmed_ = p.desktopResume && idle >= p.wakeIdleSeconds &&
                      now - *desktopSince_ >= p.wakeIdleSeconds;
-        if (shown && idle >= p.idleSeconds &&
+        if (shown && p.idleSeconds>0 && idle >= p.idleSeconds &&
                    now - std::max(openedAt_, *desktopSince_) >= p.idleSeconds) {
             return Action::hide;
         }

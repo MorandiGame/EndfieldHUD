@@ -59,6 +59,23 @@ int main(){try{
     settings.set("windowsGraphicsReleaseSeconds",-4);settings.set("windowsFrameRateLimit",9999);
     p=ResourcePolicy::from(settings);check(p.releaseSeconds==0&&p.frameRate==240,"Stored numeric preferences are bounded");
     check(settings.restoring(ehud::data::SettingsScope::display).number("windowsFrameRateLimit")==60,"Display restore includes fork performance options");
+    settings.set("windowsIdleHideSeconds",5);settings.set("windowsDesktopWakeIdleSeconds",10);
+    p=ResourcePolicy::from(settings);check(p.idleSeconds==5&&p.wakeIdleSeconds==10,"Hide and wake thresholds are independent stored preferences");
+    DesktopPresence configured;
+    check(configured.sample(p,0,0,false,true,false,true)==A::none,"Begin the configured hidden interval");
+    check(configured.sample(p,9,9,false,true,false,true)==A::none&&!configured.wakeArmed(),"The configured wake threshold does not arm early");
+    check(configured.sample(p,10,10,false,true,false,true)==A::none&&configured.wakeArmed(),"The configured wake threshold takes effect");
+    check(configured.sample(p,11,0,true,true,false,true)==A::reveal,"Movement after the configured interval reveals");
+    configured.opened(11);configured.sample(p,11,0,false,true,true,true);
+    check(configured.sample(p,16,5,false,true,true,true)==A::hide,"Hiding still uses its own five-second threshold");
+    check(settings.restoring(ehud::data::SettingsScope::display).number("windowsDesktopWakeIdleSeconds")==30,"Display restore resets the wake threshold to thirty seconds");
+    settings.set("windowsDesktopWakeIdleSeconds",-4);check(ResourcePolicy::from(settings).wakeIdleSeconds==1,"Invalid wake values cannot arm immediately");
+    p=ResourcePolicy::from(ehud::data::Settings::defaults());p.idleSeconds=0;
+    check(p.observesPresence(false)&&!p.observesPresence(true),"Turning off idle hiding does not turn off hidden mouse wake");
+    DesktopPresence wakeOnly;wakeOnly.sample(p,0,0,false,true,false,true);
+    check(wakeOnly.sample(p,30,30,false,true,false,true)==A::none&&wakeOnly.wakeArmed(),"Wake-only mode still waits for desktop inactivity");
+    check(wakeOnly.sample(p,31,0,true,true,false,true)==A::reveal,"Wake-only mode still reveals on mouse movement");
+    wakeOnly.opened(31);check(wakeOnly.sample(p,1000,1000,false,true,true,true)==A::none,"Wake-only mode never hides the shown HUD automatically");
 #ifdef _WIN32
     struct HiddenWindow { HWND value{};~HiddenWindow(){if(value)DestroyWindow(value);} } overlay;
     overlay.value=CreateWindowExW(WS_EX_LAYERED|WS_EX_TOOLWINDOW,L"STATIC",L"Desktop visibility regression",WS_POPUP,-32000,-32000,64,64,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
