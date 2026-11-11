@@ -6,6 +6,13 @@ namespace {
 unsigned checks{};
 void check(bool value,const char* reason){++checks;if(!value)throw std::runtime_error(reason);}
 void run(){
+    DisplayDescriptor placement;placement.bounds={-1920,0,0,1080};
+    for(const auto area:{DisplayBounds{-1920,0,0,1032},DisplayBounds{-1920,48,0,1080},
+                         DisplayBounds{-1872,0,0,1080},DisplayBounds{-1920,0,-48,1080}}){
+        placement.workArea=area;
+        check(hudWorkArea(placement)==area,"HUD excludes a taskbar on each edge, including negative monitor origins");
+    }
+    placement.workArea={};check(hudWorkArea(placement)==placement.bounds,"An unavailable work area keeps a usable monitor rectangle");
     // Synthetic pixel coordinates only: tests do not enumerate or change the
     // user's real monitors, DPI awareness, window placement or preferences.
     std::vector<DisplayDescriptor> displays{

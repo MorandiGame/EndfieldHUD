@@ -9,6 +9,12 @@ bool DisplayBounds::valid()const noexcept{return right>left&&bottom>top;}
 bool DisplayBounds::contains(DisplayPoint p)const noexcept{
     return valid()&&p.x>=left&&p.x<right&&p.y>=top&&p.y<bottom;
 }
+DisplayBounds hudWorkArea(const DisplayDescriptor& display)noexcept{
+    const auto& b=display.bounds;const auto& w=display.workArea;
+    const DisplayBounds clipped{std::max(b.left,w.left),std::max(b.top,w.top),
+                                std::min(b.right,w.right),std::min(b.bottom,w.bottom)};
+    return clipped.valid()?clipped:b;
+}
 namespace {
 bool sameID(std::u16string_view a,std::u16string_view b)noexcept{
     if(a.empty()||a.size()!=b.size())return false;

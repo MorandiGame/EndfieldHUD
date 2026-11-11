@@ -1,5 +1,8 @@
 // Fork-owned performance controls; upstream generated catalog stays untouched.
     {"Hide when idle","无操作自动隐藏","無操作自動隱藏","操作がないときに隠す","입력이 없을 때 숨기기"},
+    {"Hide when idle on desktop","桌面无操作自动隐藏","桌面無操作自動隱藏","デスクトップで操作がないときに隠す","바탕 화면에서 입력이 없을 때 숨기기"},
+    {"3 seconds","3 秒","3 秒","3 秒","3초"},
+    {"10 seconds","10 秒","10 秒","10 秒","10초"},
     {"Off","关闭","關閉","オフ","끔"},
     {"15 seconds","15 秒","15 秒","15 秒","15초"},
     {"30 seconds","30 秒","30 秒","30 秒","30초"},

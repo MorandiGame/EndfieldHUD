@@ -342,7 +342,12 @@ void contracts() {
     update.canCheck = true; update.canSetAutomatic = true; update.releaseURL = "https://github.com/DDDuoDuo/EndfieldHUD/releases";
     World w(measurer, hooks, update);
     w.show(M::display);
-    check(w.control(M::display,"windowsIdleHideSeconds").label=="Hide when idle","Automatic hiding is available in the actual Display page");
+    check(w.control(M::display,"windowsIdleHideSeconds").label=="Hide when idle on desktop","Desktop-only hiding is named in the actual Display page");
+    for(const int seconds:{3,5,10,60}){
+        w.activate(M::display,"windowsIdleHideSeconds");
+        check(w[M::display].performAccessibilityAction("windowsIdleHideSeconds:"+std::to_string(seconds),w.now),"The short idle timeout can be selected");
+        check(w.controller->committed().number("windowsIdleHideSeconds")==seconds,"The selected idle timeout persists");
+    }
     check(w.control(M::display,"windowsGraphicsReleaseSeconds").label=="Release hidden graphics after","Hidden graphics policy is visible");
     check(w.control(M::display,"windowsFrameRateLimit").label=="Frame rate limit","The frame cap is configurable");
     w.activate(M::display,"desktopResume");

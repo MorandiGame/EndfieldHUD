@@ -730,8 +730,8 @@ void SettingsCanvas::buildDisplay(d::Page& page) {
     }));
     rows.push_back(&toggleRow("bootLog", text("Daily boot log", "每日启动日志"), "dailyBootLog", page));
     if(hooks_.performanceControls){
-    rows.push_back(&policyNumberRow(page,"windowsIdleHideSeconds",text("Hide when idle", "无操作自动隐藏"),
-        {{0,text("Off","关闭")},{15,text("15 seconds","15 秒")},{30,text("30 seconds","30 秒")},{60,text("1 minute","1 分钟")},{120,text("2 minutes","2 分钟")},{300,text("5 minutes","5 分钟")}}));
+    rows.push_back(&policyNumberRow(page,"windowsIdleHideSeconds",text("Hide when idle on desktop", "桌面无操作自动隐藏"),
+        {{0,text("Off","关闭")},{3,text("3 seconds","3 秒")},{5,text("5 seconds","5 秒")},{10,text("10 seconds","10 秒")},{15,text("15 seconds","15 秒")},{30,text("30 seconds","30 秒")},{60,text("1 minute","1 分钟")},{120,text("2 minutes","2 分钟")},{300,text("5 minutes","5 分钟")}}));
     rows.push_back(&toggleRow("desktopResume",text("Resume on desktop mouse movement","桌面移动鼠标时恢复显示"),"windowsDesktopResume",page));
     rows.push_back(&policyNumberRow(page,"windowsGraphicsReleaseSeconds",text("Release hidden graphics after","隐藏后释放 GPU 资源"),
         {{0,text("Immediately","立即")},{1,text("1 second","1 秒")},{5,text("5 seconds","5 秒")},{30,text("30 seconds","30 秒")},{600,text("10 minutes","10 分钟")}}));

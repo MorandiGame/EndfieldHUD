@@ -272,6 +272,9 @@ struct OverlayOptions {
     std::function<bool(bool shown, bool activate)> testVisibility;
     std::function<bool()> testForeground;
     std::function<bool(bool topmost)> testBand;
+    // Normal HUD leaves the taskbar outside its native window; Projection
+    // can switch back to full-monitor coverage for its explicit hand-off.
+    bool respectWorkArea{};
 };
 struct OverlayHostStats {
     std::uint64_t frameRequests{}, framePosts{}, frames{}, timerArms{}, timerWakes{},
@@ -330,6 +333,7 @@ public:
     void create(const OverlayOptions&, OverlayCallbacks = {});
     void destroy(); // idempotent; release the renderer/DComp target before this
     void* hwnd() const noexcept;
+    void setWorkAreaCoverage(bool);
     ClientMetrics metrics() const;
     // Shows the window in the topmost band, above every normal application
     // window (Mac: the HUD panel's .statusBar level), keeping its geometry

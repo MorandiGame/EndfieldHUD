@@ -23,6 +23,9 @@ struct DisplayDescriptor {
     bool primary{};
     bool operator==(const DisplayDescriptor&)const=default;
 };
+// Available HUD rectangle, excluding the taskbar/appbars on any edge.
+// Invalid provider work areas fall back to the monitor's bounds.
+DisplayBounds hudWorkArea(const DisplayDescriptor&) noexcept;
 struct DisplayPreference {
     std::optional<std::u16string> persistentID;
     bool pointerDisplay{true};

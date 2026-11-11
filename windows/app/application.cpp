@@ -514,7 +514,8 @@ void Application::Impl::construct(){
         need(selected.has_value(),"No usable display for the source shell preview");
         hudDisplay=displays[*selected].handle;hudDisplayID=displayKey(displays[*selected]);previousApplication=reinterpret_cast<std::uintptr_t>(GetForegroundWindow());
         windowOptions.coverMonitor=true;
-        const auto bounds=displays[*selected].bounds;
+        windowOptions.respectWorkArea=true;
+        const auto bounds=gpu::hudWorkArea(displays[*selected]);
         windowOptions.x=bounds.left;windowOptions.y=bounds.top;
         windowOptions.pixelWidth=static_cast<std::uint32_t>(bounds.right-bounds.left);
         windowOptions.pixelHeight=static_cast<std::uint32_t>(bounds.bottom-bounds.top);
@@ -960,6 +961,7 @@ void Application::Impl::systemChange(std::uint32_t message,double time){
     // keeps the region still re-localizes every module).
     if(message==WM_SETTINGCHANGE){const auto language=settingsLanguage(configuration);if(watchAppearance.language!=language||rasterizer.fontLanguage()!=textFontLanguage(language))configurationPending=true;}
     if(message==WM_SETTINGCHANGE)applyTrayIcon(); // ImmersiveColorSet: the taskbar theme inks the template
+    if(message==WM_SETTINGCHANGE&&!projectionShown()&&!projectionHandoff.active())repositionHUD(time);
     if(message==WM_SETTINGCHANGE&&visibleMode()){BOOL animations=TRUE;if(SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animations,0)&&systemAnimationsOff!=(animations==FALSE))configurationPending=true;}
     if(message==WM_TIMECHANGE)broadcast(HostEvent::Kind::timeChanged,time);
     else if(message==WM_SETTINGCHANGE)broadcast(HostEvent::Kind::systemSettingsChanged,time);
@@ -1960,11 +1962,12 @@ gpu::DisplayPreference Application::Impl::displayPreference()const{
         const auto text=wide(id.string());preference.persistentID=std::u16string(text.begin(),text.end());}
     return preference;
 }
-// Covers the display with the HUD window. A per-monitor DPI change can apply
-// Windows' suggested rectangle; the second pass restores the exact bounds.
+// Fit the HUD to the available desktop, leaving the taskbar unobstructed.
+// A per-monitor DPI change can apply a suggested rectangle; fit it again.
 void Application::Impl::placeOnDisplay(const gpu::DisplayDescriptor&display){
     hudDisplay=display.handle;hudDisplayID=displayKey(display);
-    const auto window=static_cast<HWND>(host.hwnd());const auto&b=display.bounds;
+    host.setWorkAreaCoverage(true);
+    const auto window=static_cast<HWND>(host.hwnd());const auto b=gpu::hudWorkArea(display);
     for(unsigned attempt=0;attempt<2;++attempt){
         RECT current{};if(!GetWindowRect(window,&current))return;
         if(current.left==b.left&&current.top==b.top&&current.right==b.right&&current.bottom==b.bottom)return;
@@ -3052,6 +3055,7 @@ std::optional<gpu::DisplayDescriptor> Application::Impl::projectionDisplay(std::
     POINT pointer{};GetCursorPos(&pointer);if(const auto index=gpu::resolveDisplay({},displays,{pointer.x,pointer.y}))return displays[*index];return {};
 }
 void Application::Impl::moveProjection(const gpu::DisplayDescriptor&display){
+    host.setWorkAreaCoverage(false);
     hudDisplay=display.handle;projectionWorkTopPixels=std::max(0,display.workArea.top-display.bounds.top);
     // Geometry only: the HUD hidden for the hand-off and a shown Projection
     // both keep their place in the topmost band.

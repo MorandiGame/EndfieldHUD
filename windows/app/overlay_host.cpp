@@ -215,7 +215,7 @@ struct OverlayHost::Impl {
     bool ready{}, visible{}, minimized{}, focused{}, stopped{}, armed{},
         mouseTracking{}, cursorSuspended{}, cursorOwned{}, appActive{true};
     unsigned menuDepth{}, sizeMoveDepth{};
-    bool coverMonitor{};
+    bool coverMonitor{},respectWorkArea{};
     // OverlayOptions::offscreenScheduling / refreshRate (hidden benchmarks).
     bool offscreen{};
     double fixedRefresh{};
@@ -661,7 +661,7 @@ struct OverlayHost::Impl {
                 // bounds; the suggested rectangle only scales the old size.
                 MONITORINFO info{}; info.cbSize = sizeof(info);
                 const auto monitor = MonitorFromRect(suggested, MONITOR_DEFAULTTONEAREST);
-                if (monitor && GetMonitorInfoW(monitor, &info)) fitted = info.rcMonitor; else fitted = *suggested;
+                if (monitor && GetMonitorInfoW(monitor, &info)) fitted = respectWorkArea?info.rcWork:info.rcMonitor; else fitted = *suggested;
             } else if (suggested) fitted = *suggested;
             const auto* rect = suggested ? &fitted : nullptr;
             if (rect && !SetWindowPos(target, nullptr, rect->left, rect->top,
@@ -850,7 +850,7 @@ void OverlayHost::create(const OverlayOptions& options, OverlayCallbacks callbac
     p.demand = {}; p.plan.cancel(); p.client = {}; p.counts = {};
     p.gated.reset(); p.frameInterval.reset(); p.lastMouse.reset();
     p.stopped = p.ready = p.visible = p.minimized = p.focused = p.mouseTracking = false;
-    p.menuDepth = p.sizeMoveDepth = 0; p.appActive = true; p.exitCode = 0; p.coverMonitor = options.coverMonitor;
+    p.menuDepth = p.sizeMoveDepth = 0; p.appActive = true; p.exitCode = 0; p.coverMonitor = options.coverMonitor;p.respectWorkArea=options.respectWorkArea;
     p.offscreen = options.offscreenScheduling;
     p.fixedRefresh = std::isfinite(options.refreshRate) && options.refreshRate > 0 ? options.refreshRate : 0;
     p.testVisibility = options.testVisibility; p.testForeground = options.testForeground; p.testBand = options.testBand;
@@ -942,6 +942,7 @@ void OverlayHost::hide() {
     p.syncTimer();
     p.rethrow();
 }
+void OverlayHost::setWorkAreaCoverage(bool value) { auto& p=*impl_;p.requireThread();p.respectWorkArea=value; }
 bool OverlayHost::place(int x, int y, int width, int height) {
     auto& p = *impl_; p.requireThread(); p.rethrow();
     if (!p.window) return false;

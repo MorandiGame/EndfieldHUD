@@ -1042,6 +1042,24 @@ void nestedModalLoopUnderPacedMotion() {
     check(!host.stats().presentationGated && !host.stats().framePending, "No gate or frame is left pending after the modal loop");
     host.destroy();
 }
+void workAreaDpi() {
+    OverlayHost host;OverlayOptions options{L"EndfieldHUD work-area test",0,0,64,64,{}};
+    options.coverMonitor=true;options.respectWorkArea=true;host.create(options);
+    const auto window=static_cast<HWND>(host.hwnd());
+    MONITORINFO info{};info.cbSize=sizeof(info);
+    check(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&info)!=FALSE,"Read the hidden host's monitor work area");
+    auto suggested=info.rcMonitor;
+    const auto matches=[&](const RECT& expected){RECT actual{};return GetWindowRect(window,&actual)&&EqualRect(&actual,&expected);};
+    SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),reinterpret_cast<LPARAM>(&suggested));
+    check(matches(info.rcWork)&&!IsWindowVisible(window),"A DPI change keeps the hidden HUD outside the taskbar");
+    host.setWorkAreaCoverage(false);
+    SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),reinterpret_cast<LPARAM>(&suggested));
+    check(matches(info.rcMonitor),"Explicit Projection coverage still uses the full monitor");
+    host.setWorkAreaCoverage(true);
+    SendMessageW(window,WM_DPICHANGED,MAKEWPARAM(96,96),reinterpret_cast<LPARAM>(&suggested));
+    check(matches(info.rcWork)&&!IsWindowVisible(window),"Returning to HUD coverage restores the taskbar gap without showing a window");
+    host.destroy();
+}
 void nativeWindow() {
     OverlayHost host;
     std::vector<PointerEvent> pointer;
@@ -1288,7 +1306,7 @@ int main(int argc,char**argv) {
 #endif
         scheduling(); coalescing(); deadlines(); displayPacing(); mouseHistory();
 #ifdef _WIN32
-        nativeWindow(); callbackFailures(); firstOpeningBand(); zBandAndActivation(); zBandNative(); bandLostAtShow(); nativeDeadlines(); offscreenCadence(); cappedInvalidations(); gatedFrameUnderContinuousInput(); nestedModalLoopUnderPacedMotion();
+        nativeWindow(); workAreaDpi(); callbackFailures(); firstOpeningBand(); zBandAndActivation(); zBandNative(); bandLostAtShow(); nativeDeadlines(); offscreenCadence(); cappedInvalidations(); gatedFrameUnderContinuousInput(); nestedModalLoopUnderPacedMotion();
         std::cout<<"Additional hidden-startup/first-frame gate is explicit --interactive-startup on an interactive station; it is not part of this Session-0-compatible suite.\n";
         std::cout << checks << " source scheduling and hidden native host checks passed\n";
 #else
