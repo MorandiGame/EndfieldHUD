@@ -157,12 +157,15 @@ enum class SettingsScope : std::uint8_t { system, display, hudElements };
 // the key (the hotkey has its own Restore; the others are not settings rows).
 // A key not listed here (another build's) is never reset either.
 struct ScopedSetting { std::string_view key; std::optional<SettingsScope> scope; };
-inline constexpr std::array<ScopedSetting, 50> scopedSettings{{
+inline constexpr std::array<ScopedSetting, 55> scopedSettings{{
     // System, plus the Windows display choice beside the Mac one.
     {"language", SettingsScope::system}, {"launchAtLogin", SettingsScope::system}, {"closeOnFocusLost", SettingsScope::system},
     {"openOnActiveDisplay", SettingsScope::system}, {"hudDisplayUUID", SettingsScope::system}, {"hudDisplayName", SettingsScope::system},
     {"windowsDisplayID", SettingsScope::system}, {"windowsDisplayName", SettingsScope::system},
     // Display
+    {"windowsIdleHideSeconds", SettingsScope::display}, {"windowsDesktopResume", SettingsScope::display},
+    {"windowsGraphicsReleaseSeconds", SettingsScope::display}, {"windowsPauseHiddenTelemetry", SettingsScope::display},
+    {"windowsFrameRateLimit", SettingsScope::display},
     {"hudScale", SettingsScope::display}, {"hudOffsetX", SettingsScope::display}, {"hudOffsetY", SettingsScope::display},
     {"parallaxIntensity", SettingsScope::display}, {"perspectiveIntensity", SettingsScope::display}, {"backgroundDarkness", SettingsScope::display},
     {"blurAmount", SettingsScope::display}, {"theme", SettingsScope::display}, {"clockFormat", SettingsScope::display},

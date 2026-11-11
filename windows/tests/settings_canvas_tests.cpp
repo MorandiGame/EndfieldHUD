@@ -147,6 +147,7 @@ void replay(const Json& data, const Json& manifest) {
     recordText(measurer, data["text"]);
     for (const auto& row : data["pages"].array()) if (recordMicroTag(measurer, row["layer"])) break;
     m::SettingsCanvasHooks hooks;
+    hooks.performanceControls=false; // Preserve the full upstream Mac-page comparison.
     hooks.displays = [] { return std::vector<m::SettingsDisplay>{{"00000000-0000-4000-8000-000000000010", "Fixture Display"}}; };
     for (const auto& icon : data["icons"].array())
         hooks.icons.push_back({icon["id"].string(), icon["title"].string(), {d::ImageSource::Kind::asset, "application-icons/" + icon["id"].string() + ".png", std::string(64, '0'), 0}});
@@ -340,6 +341,17 @@ void contracts() {
     m::SettingsUpdateStatus update;
     update.canCheck = true; update.canSetAutomatic = true; update.releaseURL = "https://github.com/DDDuoDuo/EndfieldHUD/releases";
     World w(measurer, hooks, update);
+    w.show(M::display);
+    check(w.control(M::display,"windowsIdleHideSeconds").label=="Hide when idle","Automatic hiding is available in the actual Display page");
+    check(w.control(M::display,"windowsGraphicsReleaseSeconds").label=="Release hidden graphics after","Hidden graphics policy is visible");
+    check(w.control(M::display,"windowsFrameRateLimit").label=="Frame rate limit","The frame cap is configurable");
+    w.activate(M::display,"desktopResume");
+    check(!w.controller->committed().boolean("windowsDesktopResume"),"Desktop resume toggle persists");
+    w.activate(M::display,"desktopResume");
+    w.activate(M::display,"hiddenTelemetry");
+    check(!w.controller->committed().boolean("windowsPauseHiddenTelemetry"),"Hidden sampling toggle persists");
+    w.activate(M::display,"hiddenTelemetry");
+    w.hide(M::display);
     auto& overlay = w.context.overlay();
     const auto toastTitle = [&] { return overlay.toastState().current() ? overlay.toastState().current()->title : std::string(); };
     const auto toastCaption = [&] { return overlay.toastState().current() ? overlay.toastState().current()->caption : std::string(); };

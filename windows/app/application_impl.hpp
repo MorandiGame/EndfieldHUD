@@ -4,6 +4,7 @@
 // order (reverse): composition consumers, module owners, providers and the
 // HWND are torn down by cleanup() before the immutable source inputs and COM.
 #include "app/application.hpp"
+#include "app/resource_policy.hpp"
 #include "app/application_host.hpp"
 #include "app/application_modules.hpp"
 #include "app/module_owner.hpp"
@@ -334,14 +335,22 @@ struct Application::Impl {
     // --- memory trace (app/application_memory.cpp) --------------------------------
     int runMemoryTrace();       // hidden --memory-trace: launch, cold opening, every module, closing, cycles
     void releaseConcealedGraphics(); // after the overlayConcealed broadcast: publish, release frame targets, trim
-    // A HUD that stays closed for closedGraphicsGrace() seconds (ten minutes,
-    // app/application.hpp closedGraphicsGraceSeconds; hidden traces shorten
-    // it) releases its swap chain, composition target and graphics device
+    // A HUD that stays closed for closedGraphicsGrace() seconds (the fork's
+    // Display preference, one second by default; diagnostic overrides keep
+    // their supplied grace) releases its swap chain, composition target and graphics device
     // (Renderer::releasePresentation / suspendDevice: an idle NVIDIA device
     // keeps a driver thread waking ~70 times a second); the next opening
     // creates them again before its first frame. Every reopening within the
     // grace keeps them and is as fast as before.
-    double closedGraphicsGrace() const noexcept { return args.closedGraphicsGrace; }
+    double closedGraphicsGrace() const noexcept {
+        return production() && args.closedGraphicsGrace==closedGraphicsGraceSeconds ? ResourcePolicy::from(configuration).releaseSeconds : args.closedGraphicsGrace;
+    }
+    DesktopPresence desktopPresence;
+    std::optional<double> presenceWake;
+    long presenceMouseX{}, presenceMouseY{};
+    bool presenceMouseKnown{};
+    void sampleDesktopPresence(double time);
+    void scheduleDesktopPresence(double time);
     // After the grace: the device went and a call that needed the GPU while
     // the HUD stays closed created it again (a profile feed's captions, an
     // anticipated opening that did not come), or a media owner that held it

@@ -26,8 +26,8 @@ int main(){try{
     check(renderTranslation("{x} {01}",args)==std::nullopt,"Missing zero index stays an error");
     check(renderTranslation("{x} {} {-1}",{})=="{x} {} {-1}","Non-numeric braces remain literal");
     // Mac 1.3.1 (79bc665): 818 core + 485 redesign rows (LocalizationCatalog.swift + LocalizationCatalogRedesign.swift); no
-    // Windows-kept v1.2.0 pair is left (tools/localization_windows_kept.json). Adding a kept row changes this count.
-    const auto catalog=translationCatalog();check(catalog.size()==1303,"Full pinned five-language catalog");
+    // Windows-kept v1.2.0 pair is left. The fork adds 16 performance-control rows.
+    const auto catalog=translationCatalog();check(catalog.size()==1319,"Pinned catalog plus the fork's 16 five-language rows");
     using Row=std::array<std::string_view,5>;
     const auto five=[&](const Row&r,const char*why){const auto*e=translationEntry(r[0],r[1]);check(e&&e->traditionalChinese==r[2]&&e->japanese==r[3]&&e->korean==r[4],why);};
     for(const auto&r:std::array<Row,6>{{

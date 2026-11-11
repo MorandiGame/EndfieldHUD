@@ -72,7 +72,8 @@ using ApplicationModuleFactory = std::function<std::unique_ptr<ModuleOwner>(cons
 // worker as soon as the opening is asked for). Hidden traces and tests may
 // shorten it (ApplicationOptions::closedGraphicsGrace), and so may the
 // section 9 gate in an isolated --data-root run (ENDFIELDHUD_CLOSED_GRAPHICS_
-// GRACE, app/main.cpp); production keeps it.
+// GRACE, app/main.cpp). The fork's ResourcePolicy replaces this upstream
+// default in production (one second by default, configurable in Display).
 inline constexpr double closedGraphicsGraceSeconds = 600;
 
 enum class ApplicationMode {

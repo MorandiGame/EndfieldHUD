@@ -111,7 +111,7 @@ if(WIN32)
   target_include_directories(hud_summon_hotkey PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_definitions(hud_summon_hotkey PRIVATE ${EHUD_APP_DEFINITIONS})
   target_link_libraries(hud_summon_hotkey PUBLIC user32)
-  add_library(hud_application app/application.cpp app/application_events.cpp app/application_lifetime.cpp app/application_modules.cpp app/application_display.cpp
+  add_library(hud_application app/application.cpp app/application_events.cpp app/application_resources.cpp app/application_lifetime.cpp app/application_modules.cpp app/application_display.cpp
     app/application_navigation.cpp ${ehud_app_memory_sources} app/hud_automation.cpp app/hud_button_automation.cpp app/hud_elements_editor.cpp app/presentation_priority.cpp)
   target_include_directories(hud_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_definitions(hud_application PRIVATE ${EHUD_APP_DEFINITIONS})

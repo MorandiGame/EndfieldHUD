@@ -138,6 +138,16 @@ unsigned framesInOneSecond(const DisplayPacing& pacing, FrameDemand demand, bool
 }
 void displayPacing() {
     auto finite = visibleDemand(); finite.finiteAnimation = true;
+    {
+        DisplayPacing capped;capped.setRefreshPeriod(1/165.);capped.setFrameRateLimit(30);
+        check(framesInOneSecond(capped,finite)==31,"A 30 FPS cap limits motion on a 165 Hz display");
+        auto ambient=visibleDemand();ambient.ambientEnabled=true;
+        capped.setFrameRateLimit(15);
+        check(framesInOneSecond(capped,ambient)<=16,"The cap also limits ambient animation");
+        check(framesInOneSecond(capped,finite,false)==0,"A capped hidden HUD renders nothing");
+        capped.setFrameRateLimit(0);
+        check(framesInOneSecond(capped,finite)==166,"Disabling the cap restores display pacing");
+    }
     auto opening = visibleDemand(); opening.phase = VisibilityPhase::opening; opening.canAdvanceTransition = true;
     auto ambient = visibleDemand(); ambient.ambientEnabled = true;
     auto lowPower = finite; lowPower.lowPower = true;
@@ -795,6 +805,21 @@ void offscreenCadence() {
     check(frames == 0 && !host.stats().timerArmed && !host.stats().framePending && !IsWindowVisible(window), "A hidden window gets no frame and no timer");
     host.destroy();
 }
+void cappedInvalidations(){
+    OverlayHost host;std::vector<double> frames;
+    OverlayCallbacks callbacks;callbacks.frame=[&](double now){frames.push_back(now);};
+    OverlayOptions options{L"Hidden capped invalidations",0,0,16,16,nullptr};
+    options.offscreenScheduling=true;options.refreshRate=165;
+    host.create(options,callbacks);host.setFrameRateLimit(30);host.setFrameDemand(visibleDemand());host.show(false);
+    const auto end=OverlayHost::clockNow()+.45;
+    while(OverlayHost::clockNow()<end){host.invalidate();host.pumpOnce(1);}
+    check(frames.size()>=4&&frames.size()<=15,"Continuous input invalidations respect a 30 FPS cap");
+    for(std::size_t i=1;i<frames.size();++i)check(frames[i]-frames[i-1]>=1/30.-.001,"Input cannot bypass capped frame spacing");
+    host.hide();const auto before=frames.size();
+    for(unsigned i=0;i<20;++i){host.invalidate();host.pumpOnce(2);}
+    check(frames.size()==before&&!host.stats().timerArmed,"A hidden capped host has no drawing or frame timer");
+    host.destroy();
+}
 // The never-shown fixture lies under no cursor, so Windows answers the host's
 // leave tracking (at once or later); those notices, and only those, are
 // dropped, as projection_capture_route_tests does, so every frame below comes
@@ -1263,7 +1288,7 @@ int main(int argc,char**argv) {
 #endif
         scheduling(); coalescing(); deadlines(); displayPacing(); mouseHistory();
 #ifdef _WIN32
-        nativeWindow(); callbackFailures(); firstOpeningBand(); zBandAndActivation(); zBandNative(); bandLostAtShow(); nativeDeadlines(); offscreenCadence(); gatedFrameUnderContinuousInput(); nestedModalLoopUnderPacedMotion();
+        nativeWindow(); callbackFailures(); firstOpeningBand(); zBandAndActivation(); zBandNative(); bandLostAtShow(); nativeDeadlines(); offscreenCadence(); cappedInvalidations(); gatedFrameUnderContinuousInput(); nestedModalLoopUnderPacedMotion();
         std::cout<<"Additional hidden-startup/first-frame gate is explicit --interactive-startup on an interactive station; it is not part of this Session-0-compatible suite.\n";
         std::cout << checks << " source scheduling and hidden native host checks passed\n";
 #else

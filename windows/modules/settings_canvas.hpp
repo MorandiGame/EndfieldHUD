@@ -44,6 +44,9 @@ struct SettingsIcon {std::string id,title;design::ImageSource image;};
 // image's pixel size (its proportions place the Center logo field's artwork).
 struct SettingsLogoImage {design::ImageSource image;design::Size pixels;};
 struct SettingsCanvasHooks {
+    // The upstream Mac oracle replays its original page without fork rows;
+    // production and the fork's UI contracts keep these controls enabled.
+    bool performanceControls{true};
     // HUDDisplayPolicy.connectedDisplays (re-read when the Display menu opens).
     std::function<std::vector<SettingsDisplay>()> displays;
     // HUDSettingsInteraction: the colour wheel (seeded with the current
@@ -180,6 +183,7 @@ private:
     void moveModule(const std::string&,int offset);void dragModule(const std::string&,design::DragGrip::Phase,design::Point);void confirmModulesReset();
     design::RowPlate& openModuleRow(design::Page&);std::string openModuleTitle(const std::optional<std::string>&)const;void openModuleMenu(const design::Control&);
     void buildDisplay(design::Page&);
+    design::RowPlate& policyNumberRow(design::Page&,std::string key,std::string title,std::vector<std::pair<int,std::string>> options);
     void buildOverlay(design::Page&);
     design::RowPlate& overlayTextRow(const std::string& id,const std::string& title,std::string_view placeholder,std::string ehud::data::OverlayLayout::* member,design::Page&);
     void confirmFacilityOff(std::function<void()> commit);void stagePosition(std::optional<double>x,std::optional<double>y,bool final);

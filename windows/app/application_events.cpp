@@ -264,6 +264,7 @@ void Application::Impl::onDeadline(double time){
     // so every later hand-off below takes the host time again.
     time=hostTime(time);
     bool artwork=projectionShown()&&projection->dismissalComplete(time);
+    if(presenceWake&&*presenceWake<=time){presenceWake.reset();sampleDesktopPresence(time);if(stopping)return;time=hostTime(time);}
     // Midnight is taken before the Calendar call: a Calendar owner disabled
     // by a failure (its call skipped) keeps no past wake for the host.
     if(calendarNextWake&&*calendarNextWake<=time){calendarNextWake.reset();isolate(calendarModuleOwner,"midnight",[&]{calendarSystemChanged();updateCalendarWake();});artwork=true;}
@@ -757,6 +758,7 @@ std::optional<std::intptr_t> Application::Impl::onAppMessage(const NativeMessage
 
 namespace endfield::app {
 void Application::Impl::suspend(Suspension reason,double time){
+    desktopPresence.dismissed();presenceWake.reset();
     // Source: system sleep stops owned per-app routes (levels restored),
     // whatever else already suspended the HUD.
     if(reason==Suspension::system&&!(suspensions&static_cast<unsigned>(reason))&&audio)(void)audio->powerSuspend();
@@ -769,6 +771,8 @@ void Application::Impl::suspend(Suspension reason,double time){
     const auto closed=lifecycle.forceClose();forceConceal(time);
     if(workMode)isolate(workModeModuleOwner,"suspend",[&]{workMode->setSuspended(true,hostTime(time));});
     broadcast(HostEvent::Kind::suspended,time,static_cast<std::uint32_t>(reason));
+    // Display-off and session lock release now, rather than waiting for the grace.
+    if(ResourcePolicy::from(configuration).releaseSeconds<=1)releaseIdleGraphics(hostTime(time));
     // OverlayController.tearDownSystemPresentation: a Quit accepted before
     // the forced close still quits once the HUD is hidden (onQuitAfterSystemClose).
     perform(closed,time);
@@ -783,7 +787,8 @@ void Application::Impl::resume(Suspension reason,double time){
     if(systemServices)systemServices->set_clipboard_suspended(false);
     // A fresh Activity baseline after sleep/lock (no rate across the gap).
     time=hostTime(time);
-    if(activityProbe){activityPlan.start(time);activityProbe->update(time);scheduleDeadline();}
+    if(activityProbe&&(!ResourcePolicy::from(configuration).pauseTelemetry||session->phase()!=core::VisibilityPhase::concealed)){
+        activityPlan.start(time);activityProbe->update(time);scheduleDeadline();}
     lifecycle.setSuspended(false);
     if(workMode)isolate(workModeModuleOwner,"resume",[&]{workMode->setSuspended(false,hostTime(time));});
     if(systemServices)systemServices->refresh_battery();recordBattery();updateTrayMenu();

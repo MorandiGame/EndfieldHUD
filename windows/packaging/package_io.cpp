@@ -78,7 +78,17 @@ Handle openRead(const fs::path& path, DWORD share = FILE_SHARE_READ) {
     Handle h(CreateFileW(path.c_str(), GENERIC_READ, share, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     if (!h) windowsFailure("Opening " + pathText(path.filename()) + " failed");
     FILE_ATTRIBUTE_TAG_INFO info{};
-    if (!GetFileInformationByHandleEx(h.value, FileAttributeTagInfo, &info, sizeof(info))) windowsFailure("Inspecting a file failed");
+    if (!GetFileInformationByHandleEx(h.value, FileAttributeTagInfo, &info, sizeof(info))) {
+        const auto error=GetLastError();
+        if(error!=ERROR_INVALID_PARAMETER&&error!=ERROR_INVALID_FUNCTION&&error!=ERROR_NOT_SUPPORTED)
+            windowsFailure("Inspecting a file failed");
+        // exFAT does not implement FileAttributeTagInfo. The older query on
+        // the same OPEN_REPARSE_POINT handle still exposes the attributes
+        // needed below, without following a link or introducing a path race.
+        BY_HANDLE_FILE_INFORMATION basic{};
+        if(!GetFileInformationByHandle(h.value,&basic))windowsFailure("Inspecting file attributes failed");
+        info.FileAttributes=basic.dwFileAttributes;
+    }
     if (info.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) fail("Not a regular file: " + pathText(path.filename()));
     return h;
 }

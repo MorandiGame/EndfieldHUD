@@ -281,7 +281,9 @@ Settings Settings::defaults() {
         {"batteryAlertsEnabled",true},{"devicePopupEnabled",true},{"lowPowerVisualMode",false},{"applicationIcon","endfield"},
         {"clockFormat","twentyFourHour"},{"clockStyle","digital"},{"centerLogo","endfield"},{"centerLogoRevision",nullptr},{"alertMetric","battery"},
         {"summonShortcut",Json::Object{{"keyCode",50},{"modifiers",1}}},
-        {"summonHotkeyEnabled",true},{"recordingMode",false},{"dailyBootLog",true},{"facilityAlerts",true},{"showsCloseHint",true}
+        {"summonHotkeyEnabled",true},{"recordingMode",false},{"dailyBootLog",true},{"facilityAlerts",true},{"showsCloseHint",true},
+        {"windowsIdleHideSeconds",60},{"windowsDesktopResume",true},{"windowsGraphicsReleaseSeconds",1},
+        {"windowsPauseHiddenTelemetry",true},{"windowsFrameRateLimit",60}
     };return result;
 }
 namespace {

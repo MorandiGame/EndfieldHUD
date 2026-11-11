@@ -39,8 +39,9 @@ std::optional<modules::ActivityGPUSample>activityGPUSample(std::span<const Activ
 // the history fills on the host's one ActivitySamplingPlan deadline: from
 // launch every 5 s, every 1 s while Activity or a charge alert/badge with a
 // non-battery metric is shown, the same whether Activity is shown, hidden or
-// the HUD is closed, paused only while the session is suspended. There is no
-// visibility gate and no timer, thread or wake-up of its own: the reading
+// the HUD is closed when background history is enabled. The fork stops the
+// host's sampling plan while concealed by default. There is no
+// timer, thread or wake-up of its own: the reading
 // runs inside the existing system sample on the shared UtilityExecutor. The
 // Apps GPU column is read with the per-app CPU, only while the Apps page is
 // shown (its own sampling demand, native::ActivityCatalogSampler).

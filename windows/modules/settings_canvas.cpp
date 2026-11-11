@@ -729,10 +729,36 @@ void SettingsCanvas::buildDisplay(d::Page& page) {
         else toast(d::Icon::eye, "Recording mode off", "私密内容已恢复");
     }));
     rows.push_back(&toggleRow("bootLog", text("Daily boot log", "每日启动日志"), "dailyBootLog", page));
+    if(hooks_.performanceControls){
+    rows.push_back(&policyNumberRow(page,"windowsIdleHideSeconds",text("Hide when idle", "无操作自动隐藏"),
+        {{0,text("Off","关闭")},{15,text("15 seconds","15 秒")},{30,text("30 seconds","30 秒")},{60,text("1 minute","1 分钟")},{120,text("2 minutes","2 分钟")},{300,text("5 minutes","5 分钟")}}));
+    rows.push_back(&toggleRow("desktopResume",text("Resume on desktop mouse movement","桌面移动鼠标时恢复显示"),"windowsDesktopResume",page));
+    rows.push_back(&policyNumberRow(page,"windowsGraphicsReleaseSeconds",text("Release hidden graphics after","隐藏后释放 GPU 资源"),
+        {{0,text("Immediately","立即")},{1,text("1 second","1 秒")},{5,text("5 seconds","5 秒")},{30,text("30 seconds","30 秒")},{600,text("10 minutes","10 分钟")}}));
+    rows.push_back(&toggleRow("hiddenTelemetry",text("Pause hidden performance sampling","隐藏时暂停性能采样"),"windowsPauseHiddenTelemetry",page));
+    rows.push_back(&policyNumberRow(page,"windowsFrameRateLimit",text("Frame rate limit","帧率上限"),
+        {{0,text("Display refresh rate","跟随显示器")},{15,"15 FPS"},{30,"30 FPS"},{60,"60 FPS"},{90,"90 FPS"},{120,"120 FPS"},{144,"144 FPS"}}));
+    }
     rows.push_back(&restoreRow(Settings::Scope::display, page));
     scroll.setContentHeight(stack(rows, scroll.content(), page, 0, d::metric::boxWidth - 10));
     page.restoreOffset(scroll);
     header().configure({"DISPLAY"}, "SYS-02", title("Display", "显示"), d::format::pad2(std::int64_t(rows.size())), false);
+}
+d::RowPlate& SettingsCanvas::policyNumberRow(d::Page& page,std::string key,std::string label,std::vector<std::pair<int,std::string>> options){
+    const auto valueTitle=[this,key,options]{
+        const auto value=config().number(key);
+        for(const auto& option:options)if(value==option.first)return option.second;
+        return std::to_string(static_cast<int>(value));
+    };
+    auto& field=dropdown(page,key,label,valueTitle(),std::nullopt,[this,key,options](const d::Dropdown& anchor){
+        std::vector<d::Menu::Item> items;
+        for(const auto& option:options){auto item=menuItem(std::to_string(option.first),option.second);item.selected=config().number(key)==option.first;items.push_back(std::move(item));}
+        openMenu(key,std::move(items),anchor,std::nullopt,[this,key,options](const d::Menu::Item& item){
+            for(const auto& option:options)if(item.id==std::to_string(option.first)){update([&](Settings& s){s.set(key,option.first);});break;}
+        });
+    });
+    binders_.push_back([&field,valueTitle]{field.setValue(valueTitle());});
+    return row(key,label,field,page);
 }
 // MARK: HUD elements (Display > HUD elements, :583-629)
 // The HUD's title, Sanity gauge and facility alert tags: whether each shows,

@@ -117,6 +117,9 @@ public:
             o.folder = c.dataRoot / "Updates";
             // An isolated data root (section 9 gate) never checks on its own and never installs.
             o.automaticAllowed = o.installAllowed = automaticAllowed_ = !host_.isolatedDataRoot();
+            // Fork builds accept upstream changes through Git. Never replace
+            // a customized executable with the original author's installer.
+            o.installAllowed = false;
             u::WinHttpTransport::Options t;
             t.notify = [window = window_, message = message_] { PostMessageW(window, message, transportNotice, 0); };
             t.now = c.clock;

@@ -54,6 +54,8 @@ public:
     // The display's refresh period in seconds. None, or a period outside
     // 1/1000..1/20 s, keeps the source 60 Hz cadence.
     void setRefreshPeriod(std::optional<double> seconds);
+    void setFrameRateLimit(double hz);
+    double frameRateLimit() const { return limit_; }
     std::optional<double> refreshPeriod() const { return period_; }
     // Normal-rate finite motion (a transition or a finite animation, not low
     // power): the cadence that follows the display.
@@ -63,6 +65,7 @@ public:
     std::optional<double> interval(const FrameWakePlan&) const;
 private:
     std::optional<double> period_;
+    double limit_{};
 };
 
 // A single deferred presentation ticket. cancel() invalidates even a message
@@ -364,6 +367,7 @@ public:
     // hidden. false when Windows refuses the move or no window exists.
     bool place(int x, int y, int pixelWidth, int pixelHeight);
     void setFrameDemand(core::FrameDemand);
+    void setFrameRateLimit(double hz); // 0: display cadence; applies to input invalidations too
     // Caller aggregates its next media/save/countdown deadline. It shares the
     // existing waitable timer, survives hide, and is consumed before callback.
     // Cancel with nullopt. Stop/destroy cancel both animation and external work.

@@ -20,9 +20,19 @@
 
 namespace endfield::core {
 namespace {
-constexpr TranslationEntry entries[]{
+constexpr TranslationEntry upstreamEntries[]{
 #include "core/localization_catalog.inc"
 };
+constexpr TranslationEntry forkEntries[]{
+#include "core/localization_fork.inc"
+};
+constexpr auto entries=[] {
+    std::array<TranslationEntry,std::size(upstreamEntries)+std::size(forkEntries)> result{};
+    auto next=std::copy(std::begin(upstreamEntries),std::end(upstreamEntries),result.begin());
+    std::copy(std::begin(forkEntries),std::end(forkEntries),next);
+    std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return a.english<b.english||(a.english==b.english&&a.simplifiedChinese<b.simplifiedChinese);});
+    return result;
+}();
 constexpr std::array<std::string_view,6> settings{"system","english","simplifiedChinese","traditionalChinese","japanese","korean"};
 std::string_view selected(const TranslationEntry& e,Language l){switch(l){
 case Language::simplifiedChinese:return e.simplifiedChinese;case Language::traditionalChinese:return e.traditionalChinese;
@@ -100,7 +110,7 @@ TextRegion regionFor(Language l,TextRegion systemRegion)noexcept{return regionNa
 std::span<const TranslationEntry> translationCatalog()noexcept{return entries;}
 const TranslationEntry*translationEntry(std::string_view english,std::string_view simplified)noexcept{
     const auto found=std::lower_bound(std::begin(entries),std::end(entries),std::pair{english,simplified},[](const auto&e,const auto&key){return e.english<key.first||(e.english==key.first&&e.simplifiedChinese<key.second);});
-    return found!=std::end(entries)&&found->english==english&&found->simplifiedChinese==simplified?found:nullptr;
+    return found!=std::end(entries)&&found->english==english&&found->simplifiedChinese==simplified?&*found:nullptr;
 }
 std::optional<std::string>renderTranslation(std::string_view value,std::span<const std::string_view>arguments){
     std::vector<bool>used(arguments.size());std::string result;result.reserve(value.size());std::size_t at{};

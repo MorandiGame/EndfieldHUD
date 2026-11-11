@@ -870,6 +870,9 @@ void Application::Impl::concealed(double time){
     // The hidden HUD has no projected controls for UI Automation.
     if(automation)automation->disconnectOwners();
     broadcast(HostEvent::Kind::overlayConcealed,time);
+    if(production()&&ResourcePolicy::from(configuration).pauseTelemetry&&activityProbe){
+        activityPlan.stop();if(activityCatalog)activityCatalog->invalidate();activityProbe->update(hostTime(time));
+    }
     // The density the next opening deploys at: as the retract would have left it, then the deploy.
     if(!designDensityRetracted)retractDesignDensity(); // (a delivered shelf drag's retract was modelled when it settled)
     designDensityRetracted=false;
@@ -904,7 +907,7 @@ void Application::Impl::releaseConcealedGraphics(){
     idleGraphicsAttempted=idleGraphicsRefused=false;graphicsIdleAt=now()+closedGraphicsGrace();scheduleDeadline();
 }
 // The HUD stayed closed for closedGraphicsGrace() seconds (a host deadline,
-// ten minutes in production): nothing presents until the next opening, so
+// configured in Display): nothing presents until the next opening, so
 // neither the device (the driver thread that wakes ~70 times a second while
 // a D3D11 device merely exists) nor the swap chain and composition target
 // stay alive. Every retained resource keeps its identity in system memory;
@@ -928,6 +931,8 @@ void Application::Impl::releaseIdleGraphics(double time){
         // Only together: a device a media owner still holds keeps its swap chain too.
         idleDeviceSuspended=renderer.suspendDevice()||renderer.deviceSuspended();
         idleGraphicsRefused=!idleDeviceSuspended;
+        if(idleDeviceSuspended){HEAP_OPTIMIZE_RESOURCES_INFORMATION heaps{HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION,0};
+            (void)HeapSetInformation(nullptr,HeapOptimizeResources,&heaps,sizeof(heaps));}
     }
     catch(const std::exception&e){
         if(!production())throw;
@@ -937,6 +942,7 @@ void Application::Impl::releaseIdleGraphics(double time){
     if(lifecycleTraced()&&memoryTrace->closings<8)recordMemory("closed-idle-"+std::to_string(memoryTrace->closings),true);
 }
 void Application::Impl::prepareGraphics(bool anticipated){
+    if(anticipated&&production()&&ResourcePolicy::from(configuration).releaseSeconds<=1)return;
     if(!ready||stopping||!renderer.stats().initialized||!renderer.deviceSuspended())return;
     try{if(renderer.prepareDevice()&&anticipated&&session->phase()==core::VisibilityPhase::concealed){preparedGraphicsUntil=now()+preparedGraphicsLifetime;scheduleDeadline();}}
     catch(const std::exception&e){
@@ -2043,6 +2049,8 @@ void Application::Impl::selectModule(core::Module module,double time){
     automationChanged();
 }
 void Application::Impl::open(double time){
+    desktopPresence.opened(time);
+    if(production()&&activityProbe&&!suspensions&&!activityPlan.running())activityPlan.start(hostTime(time));
     time=hostTime(time);closing=false;canvasOpenedAt=time;session->open(time,0x5eed);
     concealedBroadcast=false;designDensityRetracted=false;designDensityFrameTime.reset();
     // The swap chain and composition target released while the HUD stayed
@@ -2071,6 +2079,7 @@ void Application::Impl::open(double time){
     if(visibleMode()&&headerClock.setActive(true,time))updateClock();
 }
 void Application::Impl::close(double time){
+    desktopPresence.dismissed();
     if(closing)return;
     time=hostTime(time);
     if(!production())std::cout<<"Preview close requested at "<<time<<std::endl;
@@ -2276,6 +2285,7 @@ void Application::Impl::updateCalendarWake(){calendarWakeActive=calendarState&&c
 bool Application::Impl::flushCalendar(){if(!calendarState)return true;for(unsigned step=0;step<128;++step){calendarState->queueCapacityAvailable();calendarNotifications->queueCapacityAvailable();utility->waitIdle();utility->drain();const auto&status=calendarNotifications->status();if(!calendarState->hasPendingWork()&&!status.busy&&!status.pending)return !calendarState->hasPersistenceFailure();}return false;}
 void Application::Impl::applyConfiguration(double time){
     if(!configurationPending)return;configurationPending=false;time=hostTime(time);
+    if(production())host.setFrameRateLimit(ResourcePolicy::from(configuration).frameRate);
     // HUDRuntimeAppearance.reduceMotion: the preference or the system's
     // reduce-motion setting (Windows: "Animation effects" off,
     // SPI_GETCLIENTAREAANIMATION), re-read on WM_SETTINGCHANGE; never saved.
@@ -2334,6 +2344,7 @@ core::FrameDemand Application::Impl::demand(double time){
     return result;
 }
 void Application::Impl::scheduleDeadline(){if(!liveScheduling()||!ready||stopping)return;std::optional<double>next;
+    scheduleDesktopPresence(now());
     auto include=[&](std::optional<double>value){if(value&&(!next||*value<*next))next=value;};
     // After the grace, while the HUD stays closed: graphics that came back
     // (a call that needed the GPU) or that a media owner kept and has now
@@ -2341,7 +2352,7 @@ void Application::Impl::scheduleDeadline(){if(!liveScheduling()||!ready||stoppin
     if(!graphicsIdleAt&&idleGraphicsAttempted&&session->phase()==core::VisibilityPhase::concealed&&renderer.stats().initialized&&!renderer.deviceSuspended()&&
        !projectionHandoff.active()&&!projectionShown()&&(idleDeviceSuspended||(idleGraphicsRefused&&renderer.deviceReleasable()))){
         idleGraphicsAttempted=false;graphicsIdleAt=now()+std::min(closedGraphicsRelease,closedGraphicsGrace());}
-    include(calendarNextWake);include(graphicsIdleAt);if(lifecycleOpening||lifecycleClosing)include(transitionDeadline);include(preparedGraphicsUntil);if(projection)include(projection->dismissalDeadline());include(headerClock.nextDeadline());include(registry.nextWakeTime(now()));
+    include(presenceWake);include(calendarNextWake);include(graphicsIdleAt);if(lifecycleOpening||lifecycleClosing)include(transitionDeadline);include(preparedGraphicsUntil);if(projection)include(projection->dismissalDeadline());include(headerClock.nextDeadline());include(registry.nextWakeTime(now()));
     if(mediaBroker){const auto wake=mediaBroker->nextWakeTime();if(wake&&*wake>now())include(wake);}if(eventOwner)include(eventOwner->saveDeadline());if(activityProbe)include(activityPlan.nextWakeTime());include(lifecycle.nextWakeTime());host.setDeadline(next);
 }
 void Application::Impl::refresh(double time){if(liveScheduling()&&ready&&!stopping){
@@ -2793,6 +2804,10 @@ void Application::Impl::bindNavigation(double time,bool animated){
 // sample reaches the Power area.
 void Application::Impl::syncActivityTelemetry(double time){
     if(!activityTelemetry||stopping)return;
+    if(production()&&ResourcePolicy::from(configuration).pauseTelemetry&&session->phase()==core::VisibilityPhase::concealed&&!projectionShown()){
+        if(activityPlan.running()){activityPlan.stop();if(activityCatalog)activityCatalog->invalidate();if(activityProbe)activityProbe->update(hostTime(time));}
+        return;
+    }
     time=hostTime(time);
     auto*charge=powerArea();bool wanted{};
     if(charge&&!isolateService(power::PowerAreaService::key,"telemetry",[&]{wanted=charge->telemetryDemand();}))charge=nullptr;

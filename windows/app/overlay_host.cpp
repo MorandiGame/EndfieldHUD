@@ -46,6 +46,9 @@ void FrameWakePlan::cancel() {
 void DisplayPacing::setRefreshPeriod(std::optional<double> seconds) {
     period_ = seconds && std::isfinite(*seconds) && *seconds >= 1.0 / 1000 && *seconds <= 1.0 / 20 ? seconds : std::nullopt;
 }
+void DisplayPacing::setFrameRateLimit(double hz) {
+    limit_ = std::isfinite(hz) && hz > 0 ? std::clamp(hz, 1., 240.) : 0;
+}
 bool DisplayPacing::paced(const FrameWakePlan& plan) {
     // FrameDemandGate's finite motion: a transition phase or a finite
     // animation; its alternate ambient wakes are not paced.
@@ -54,8 +57,9 @@ bool DisplayPacing::paced(const FrameWakePlan& plan) {
         (demand.phase != core::VisibilityPhase::visible || demand.finiteAnimation);
 }
 std::optional<double> DisplayPacing::interval(const FrameWakePlan& plan) const {
-    if (paced(plan) && period_) return period_;
-    return plan.interval();
+    auto interval = paced(plan) && period_ ? period_ : plan.interval();
+    if (interval && limit_ > 0) interval = std::max(*interval, 1 / limit_);
+    return interval;
 }
 std::size_t newerMouseHistory(std::span<const MouseHistoryPoint> newestFirst, MouseHistoryPoint current,
     MouseHistoryPoint previous, std::vector<MouseHistoryPoint>& out) {
@@ -198,6 +202,8 @@ struct OverlayHost::Impl {
     // Display pacing, the frame waiting for the swap chain's admission and
     // the interval the frame deadline was planned with.
     DisplayPacing pacing;
+    double lastFrameAt{-1e30};
+    bool deferredInvalidation{};
     std::optional<std::uintptr_t> gated;
     double gatedSince{};
     std::optional<double> frameInterval;
@@ -316,6 +322,7 @@ struct OverlayHost::Impl {
         armed = false;
     }
     void cancelFrames() noexcept {
+        deferredInvalidation = false;
         cancelTimer();
         plan.cancel();
         frames.cancel();
@@ -338,7 +345,7 @@ struct OverlayHost::Impl {
     // Display-paced frames follow one another through the owner's gate.
     bool gateChains() const {
         const auto handlers = callbacks;
-        return handlers && handlers->presentationWaitable && handlers->presentationWaitable() != nullptr;
+        return pacing.frameRateLimit() == 0 && handlers && handlers->presentationWaitable && handlers->presentationWaitable() != nullptr;
     }
     // A frame may start now: no gate, an admission held, or the object
     // admits one at once (taken here and reported to the owner).
@@ -381,6 +388,7 @@ struct OverlayHost::Impl {
     void runFrame(std::uintptr_t ticket, const std::shared_ptr<OverlayCallbacks>& handlers) {
         if (!frames.consume(ticket, window && !stopped && plan.canPresent() && visible && !minimized) || !handlers || !handlers->frame) return;
         ++counts.frames;
+        lastFrameAt = monotonicSeconds();
         const bool paced = DisplayPacing::paced(plan);
         if (paced) ++counts.pacedFrames;
         handlers->frame(monotonicSeconds());
@@ -449,6 +457,14 @@ struct OverlayHost::Impl {
     }
     void postFrame() {
         ++counts.frameRequests;
+        if (pacing.frameRateLimit() > 0 && plan.canPresent()) {
+            const auto due = lastFrameAt + 1 / pacing.frameRateLimit();
+            if (monotonicSeconds() + .000001 < due) {
+                deferredInvalidation = true;
+                if (!deadlines.frame() || *deadlines.frame() > due) deadlines.setFrame(due);
+                syncTimer(); return;
+            }
+        }
         const auto ticket = frames.request(window && !stopped && plan.canPresent());
         if (!ticket) return;
         if (!PostMessageW(window, frameMessage, static_cast<WPARAM>(*ticket), 0)) {
@@ -493,7 +509,8 @@ struct OverlayHost::Impl {
         const auto due=deadlines.takeDue(now);
         if (due.frame) {
             const auto result = plan.wake();
-            if (result.present) postFrame();
+            const bool deferred = std::exchange(deferredInvalidation, false);
+            if (result.present || deferred) postFrame();
             const auto interval = timerInterval();
             frameInterval = interval;
             if (interval && window && !stopped) {
@@ -946,6 +963,12 @@ void OverlayHost::setFrameDemand(core::FrameDemand demand) {
     if (sameDemand(demand, p.demand)) return;
     p.demand = demand;
     p.refreshSchedule();
+}
+void OverlayHost::setFrameRateLimit(double hz) {
+    auto& p = *impl_; p.requireThread(); p.rethrow();
+    const auto before = p.pacing.frameRateLimit();
+    p.pacing.setFrameRateLimit(hz);
+    if (before != p.pacing.frameRateLimit()) p.refreshSchedule();
 }
 void OverlayHost::invalidate() { auto& p = *impl_; p.requireThread(); p.rethrow(); p.postFrame(); }
 void OverlayHost::setTestDpi(unsigned dpi) {
