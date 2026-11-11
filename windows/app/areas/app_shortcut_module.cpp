@@ -11,6 +11,7 @@
 #include "modules/app_shortcut_tasks.hpp"
 #include "native/app_shortcut_assets.hpp"
 #include "native/app_shortcut_icons.hpp"
+#include "native/desktop_shortcuts.hpp"
 #include "native/layer_image_source.hpp"
 #include "native/app_shortcut_text.hpp"
 #include "native/notes_clipboard.hpp"
@@ -81,7 +82,7 @@ std::string invalidApplicationText(core::Language l) {
 std::string lower(std::string value) { for (auto& c : value) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a'); return value; }
 std::string suffix(std::string_view path) { const auto dot = path.rfind('.'); return dot == path.npos ? std::string{} : lower(std::string(path.substr(dot))); }
 // A Windows application file the Add App canvas takes (Mac: one .app URL).
-bool applicationFile(std::string_view path) { const auto kind = suffix(path); return kind == ".exe" || kind == ".lnk"; }
+bool applicationFile(std::string_view path) { const auto kind = suffix(path); return kind == ".exe" || kind == ".lnk" || kind==".url"; }
 // A chosen application: an .exe/.lnk file, or a packaged application named
 // "shell:AppsFolder\<AUMID>" (the shared dialog's applications mode).
 std::optional<g::AppShortcutSelection> chosenApplication(std::string_view path) {
@@ -273,7 +274,8 @@ public:
         // Edit-menu clipboard of the name fields and Ctrl+V application import.
         if (synthetic_) {syntheticClipboard_ = std::make_shared<SyntheticClipboard>();clipboard_ = syntheticClipboard_;}
         else clipboard_ = g::systemNotesClipboard();
-        extractor_ = synthetic_ ? syntheticIcons(synthetic_, seed_.logo) : g::windowsAppShortcutIconExtractor();
+        extractor_ = synthetic_ ? syntheticIcons(synthetic_, seed_.logo) :
+            g::cachedAppShortcutIconExtractor(g::windowsAppShortcutIconExtractor(),directory_/"IconCache");
         iconRoute_ = utility_.makeRoute();
         tools::DesignOwnerOptions options;
         need(host_.designOwnerOptions(options, "appShortcuts", routing()), "the design owner services are required");
@@ -443,7 +445,7 @@ private:
     std::unique_ptr<m::AppShortcutTasks> makeTasks() {
         return std::make_unique<m::AppShortcutTasks>(utility_, directory_, g::nativeShortcutTextRules(),
             synthetic_ ? syntheticOS(synthetic_) : g::windowsAppShortcutOS(), [this](m::ShortcutTaskResult r) { guarded("completion", [&] { completed(std::move(r)); }); },
-            relinkRoot_);
+            relinkRoot_,mode_==ApplicationAreaMode::production&&!host_.isolatedDataRoot()?m::DesktopShortcutScanner(g::windowsDesktopShortcuts):m::DesktopShortcutScanner{});
     }
     // The canvas's platform side (AppShortcutCanvasServices).
     m::AppShortcutCanvasServices services() {
@@ -666,7 +668,7 @@ private:
     // recently shown with the fallback glyph. Each icon is published twice in
     // this owner's image source: as extracted (the canvas tile) and trimmed
     // (the side list), with the room the rasters' borrowed generations need.
-    struct IconWant { std::string id, applicationKey; g::AppShortcutSelection selection; };
+    struct IconWant { std::string id, applicationKey; g::AppShortcutSelection selection; bool monochrome{}; };
     struct IconEntry { std::string applicationKey; std::uint64_t revision{}, used{}; bool attempted{}, trimmed{}; std::optional<std::array<double, 3>> color; };
     static constexpr std::size_t maximumIcons = m::shortcutOriginalIconCapacity;
     static constexpr std::size_t iconBytes = std::size_t(g::appShortcutIconPixels) * g::appShortcutIconPixels * 4;
@@ -693,7 +695,13 @@ private:
         const auto& items = file_.items;
         for (const auto n : m::shortcutOriginalIconOrder(file_, iconOffset_, maximumIcons,
                  [](const m::ShortcutRecord& item) { return g::appShortcutIconSelection(item.locator).has_value(); }))
-            if (const auto selection = g::appShortcutIconSelection(items[n].locator)) wanted_.push_back({items[n].id, applicationKey(items[n].locator), *selection});
+            if (const auto selection = g::appShortcutIconSelection(items[n].locator)) {
+                const bool monochrome=items[n].originalFields[m::desktopSourceField].isObject();
+                auto key=applicationKey(items[n].locator);
+                if(monochrome){key+="|desktop-monochrome";const auto& fingerprint=items[n].originalFields[m::desktopSourceField]["fingerprint"];
+                    if(fingerprint.isString())key+=fingerprint.string();}
+                wanted_.push_back({items[n].id,std::move(key),*selection,monochrome});
+            }
         for (const auto& w : wanted_) icons_[w.id].used = ++iconUse_;
         // Removed shortcuts, shortcuts without a Windows target (an imported
         // record restored by a store restart) or the App icon preset, and the
@@ -736,9 +744,10 @@ private:
             if (found != icons_.end() && found->second.attempted && found->second.applicationKey == w.applicationKey) continue;
             auto result = std::make_shared<std::optional<ExtractedIcon>>();
             std::weak_ptr<bool> alive = alive_;
-            if (!utility_.submit(iconRoute_, [extractor = extractor_, selection = w.selection, result] {
+            if (!utility_.submit(iconRoute_, [extractor = extractor_, selection = w.selection, monochrome=w.monochrome, result] {
                     auto pixels = extractor(selection, g::appShortcutIconPixels);
                     if (!pixels) return;
+                    if(monochrome)g::monochromeAppShortcutIcon(*pixels);
                     ExtractedIcon icon{std::move(*pixels), std::nullopt, std::nullopt};
                     icon.trimmed = m::trimDesktopIcon(icon.pixels.width, icon.pixels.height, icon.pixels.straightRGBA);
                     icon.color = m::shortcutTileColor(icon.pixels.width, icon.pixels.height, icon.pixels.straightRGBA);

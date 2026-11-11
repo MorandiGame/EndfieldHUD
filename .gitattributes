@@ -4,3 +4,7 @@ Resources/OrbiPom/Matter-LICENSE.txt -text
 # The shared font folder holds unmodified upstream files whose sizes and
 # SHA-256 hashes are pinned in its manifest; never convert line endings.
 Resources/Fonts/** -text
+# Resource catalogs are SHA-256 pinned by the native loaders. CRLF conversion
+# changes their bytes and can disable complete module areas (e.g. Add App).
+Resources/** -text
+windows/resources/** -text

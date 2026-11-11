@@ -153,6 +153,16 @@ std::string saveShortcutDraft(ShortcutFile& file, const ShortcutCandidate& selec
 }
 bool removeShortcut(ShortcutFile& file, std::string_view id) {
     const auto key = uuid(std::string(id));
+    for(const auto& item:file.items)if(uuid(item.id)==key){
+        const auto& source=item.originalFields["windowsDesktopSource"]["key"];
+        if(source.isString()&&!source.string().empty()){
+            auto& ignored=file.originalFields["windowsDesktopIgnored"];
+            auto keys=ignored.isArray()?ignored.array():J::Array{};
+            if(std::find(keys.begin(),keys.end(),source)==keys.end())keys.push_back(source);
+            ignored=std::move(keys);
+        }
+        break;
+    }
     return std::erase_if(file.items, [&](const auto& v) { return uuid(v.id) == key; }) != 0;
 }
 bool moveShortcut(ShortcutFile& file, std::string_view id, std::ptrdiff_t index) {

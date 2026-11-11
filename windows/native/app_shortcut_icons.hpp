@@ -32,6 +32,10 @@ struct AppShortcutIconPixels {
 };
 // Worker-only. Empty: the target has no extractable icon.
 using AppShortcutIconExtractor = std::function<std::optional<AppShortcutIconPixels>(const AppShortcutSelection&, unsigned pixels)>;
+// A bounded external binary cache, keyed by source path, size and modification
+// time. Unchanged desktop links reuse pixels across application restarts.
+AppShortcutIconExtractor cachedAppShortcutIconExtractor(AppShortcutIconExtractor,std::filesystem::path directory);
+void monochromeAppShortcutIcon(AppShortcutIconPixels&);
 // Worker-only: the encoded logo (PNG or JPEG, as stored in the package) of the
 // packaged application with exactly this AppUserModelID, chosen for about
 // `pixels` square; empty when it is not installed, has no logo or exceeds the

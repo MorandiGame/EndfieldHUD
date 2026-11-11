@@ -22,8 +22,20 @@ struct AppShortcutTasks::Impl:std::enable_shared_from_this<Impl> {
         ShortcutRepository repository;ShortcutTextRules rules;
         native::NativeAppShortcutService service;ShortcutFile file;bool loaded{};
         std::filesystem::path relinkRoot;bool relinkListed{true};
-        Worker(std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,std::filesystem::path relink)
-            :repository(std::move(p),r),rules(std::move(r)),service(std::move(os)),relinkRoot(std::move(relink)){}
+        DesktopShortcutScanner desktop;bool desktopSynced{};
+        Worker(std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,std::filesystem::path relink,DesktopShortcutScanner scan)
+            :repository(std::move(p),r),rules(std::move(r)),service(std::move(os)),relinkRoot(std::move(relink)),desktop(std::move(scan)){}
+        void syncDesktop(ShortcutTaskResult& r){
+            if(!desktop||desktopSynced)return;desktopSynced=true;
+            try{
+                const auto snapshot=desktop();if(!snapshot.complete){r.desktopSyncFailed=true;return;}
+                auto next=file;
+                const auto result=synchronizeDesktopShortcuts(next,snapshot,[&](const auto& path){return service.inspect({native::AppShortcutSelectionKind::file,path});},
+                    []{return ehud::data::makeUUID();},ehud::data::foundationNow(),rules);
+                if(result.changed){repository.save(next);file=std::move(next);}
+                r.desktopSync=result;
+            }catch(const std::exception&){r.desktopSyncFailed=true;} // The existing saved list stays usable.
+        }
         // Record first, ledger second (MacRelinkLedger): the committed file
         // stands whatever happens to the ledger; the next load reconciles.
         void relinks(ShortcutTaskResult&r)noexcept{
@@ -35,7 +47,7 @@ struct AppShortcutTasks::Impl:std::enable_shared_from_this<Impl> {
             [[maybe_unused]] Apartment apartment;
             if(!loaded){file=repository.load();loaded=true;}
             switch(t.kind){
-            case ShortcutTaskKind::load:r.file=file;relinks(r);break;
+            case ShortcutTaskKind::load:syncDesktop(r);r.file=file;relinks(r);break;
             case ShortcutTaskKind::inspect:r.candidate=service.inspect(*t.selection);break;
             case ShortcutTaskKind::edit:
                 // Imported Mac records remain editable on Windows. Saving their
@@ -70,8 +82,8 @@ struct AppShortcutTasks::Impl:std::enable_shared_from_this<Impl> {
     app::UtilityExecutor::Route route;Completion completed;
     std::optional<ShortcutTask> pending;std::uint64_t running{},lastToken{};
     ShortcutTaskKind runningKind{};bool cancelled{};
-    Impl(app::UtilityExecutor&q,std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,Completion c,std::filesystem::path relink)
-        :queue(q),worker(std::make_shared<Worker>(std::move(p),std::move(r),std::move(os),std::move(relink))),route(q.makeRoute()),completed(std::move(c)){}
+    Impl(app::UtilityExecutor&q,std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,Completion c,std::filesystem::path relink,DesktopShortcutScanner desktop)
+        :queue(q),worker(std::make_shared<Worker>(std::move(p),std::move(r),std::move(os),std::move(relink),std::move(desktop))),route(q.makeRoute()),completed(std::move(c)){}
     void pump(){
         if(!pending||running)return;
         auto task=std::make_shared<const ShortcutTask>(*pending);
@@ -86,10 +98,10 @@ struct AppShortcutTasks::Impl:std::enable_shared_from_this<Impl> {
         running=task->token;runningKind=task->kind;pending.reset();
     }
 };
-AppShortcutTasks::AppShortcutTasks(app::UtilityExecutor&q,std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,Completion c,std::filesystem::path relink){
+AppShortcutTasks::AppShortcutTasks(app::UtilityExecutor&q,std::filesystem::path p,ShortcutTextRules r,native::AppShortcutOS os,Completion c,std::filesystem::path relink,DesktopShortcutScanner desktop){
     if(!c)throw std::invalid_argument("Application tasks require an owner completion");
     if(!relink.empty()&&(!relink.is_absolute()||relink.lexically_normal()!=relink))throw std::invalid_argument("The relink ledger needs the explicit absolute app root");
-    impl_=std::make_shared<Impl>(q,std::move(p),std::move(r),std::move(os),std::move(c),std::move(relink));
+    impl_=std::make_shared<Impl>(q,std::move(p),std::move(r),std::move(os),std::move(c),std::move(relink),std::move(desktop));
 }
 AppShortcutTasks::~AppShortcutTasks(){if(impl_)impl_->queue.invalidate(impl_->route,false);}
 bool AppShortcutTasks::submit(ShortcutTask t){

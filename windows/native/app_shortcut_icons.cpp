@@ -1,4 +1,6 @@
 #include "native/app_shortcut_icons.hpp"
+#include "core/data/file_io.hpp"
+#include "core/data/sha256.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -39,6 +41,40 @@ std::optional<AppShortcutSelection> appShortcutIconSelection(const J& locator) n
             return AppShortcutSelection{AppShortcutSelectionKind::file, target["path"].string()};
     } catch (...) {}
     return {};
+}
+void monochromeAppShortcutIcon(AppShortcutIconPixels& icon){
+    for(std::size_t i=0;i+3<icon.straightRGBA.size();i+=4){
+        const auto gray=static_cast<std::uint8_t>((54u*icon.straightRGBA[i]+183u*icon.straightRGBA[i+1]+19u*icon.straightRGBA[i+2]+128u)>>8);
+        icon.straightRGBA[i]=icon.straightRGBA[i+1]=icon.straightRGBA[i+2]=gray;
+    }
+}
+AppShortcutIconExtractor cachedAppShortcutIconExtractor(AppShortcutIconExtractor extractor,std::filesystem::path directory){
+    return [extractor=std::move(extractor),directory=std::move(directory)](const AppShortcutSelection& selection,unsigned size)->std::optional<AppShortcutIconPixels>{
+        if(selection.kind!=AppShortcutSelectionKind::file||size==0||size>256)return extractor(selection,size);
+        std::filesystem::path cache;
+        std::optional<std::string> old;
+        try{
+            const auto source=std::filesystem::u8path(selection.value);
+            const auto key="v1:"+selection.value+":"+std::to_string(size)+":"+std::to_string(std::filesystem::file_size(source))+":"+std::to_string(std::filesystem::last_write_time(source).time_since_epoch().count());
+            cache=directory/(ehud::data::Sha256::hex(key)+".rgba");
+            old=ehud::data::detail::readFile(cache,256*256*4+4);
+            if(old&&old->size()==std::size_t(size)*size*4+4&&old->starts_with("EHI1")){
+                AppShortcutIconPixels pixels{size,size,{}};pixels.straightRGBA.assign(old->begin()+4,old->end());return pixels;
+            }
+        }catch(const std::exception&){cache.clear();}
+        auto pixels=extractor(selection,size);if(!pixels||cache.empty())return pixels;
+        try{
+            if(pixels->width!=size||pixels->height!=size||pixels->straightRGBA.size()!=std::size_t(size)*size*4)return pixels;
+            const auto bytes=std::string("EHI1")+std::string(reinterpret_cast<const char*>(pixels->straightRGBA.data()),pixels->straightRGBA.size());
+            ehud::data::detail::replaceFile(cache,old,bytes,256*256*4+4);
+            // At most 256 small icons on disk; nothing stays resident just for caching.
+            std::vector<std::filesystem::directory_entry> entries;
+            for(const auto& entry:std::filesystem::directory_iterator(directory))if(entry.path().extension()==".rgba"&&entry.is_regular_file())entries.push_back(entry);
+            if(entries.size()>256){std::sort(entries.begin(),entries.end(),[](const auto& a,const auto& b){return a.last_write_time()<b.last_write_time();});
+                for(std::size_t i=0;i<entries.size()-256;++i){std::error_code error;std::filesystem::remove(entries[i].path(),error);}}
+        }catch(const std::exception&){} // Cache failures never affect the shortcut itself.
+        return pixels;
+    };
 }
 
 #ifdef _WIN32
@@ -84,11 +120,28 @@ bool linkIcon(const std::wstring& path, unsigned size, Icon& icon) {
     // Recorded fields only, as at inspection: no Resolve or search.
     std::vector<wchar_t> buffer(32768, L'\0');int index{};
     if (SUCCEEDED(link->GetIconLocation(buffer.data(), static_cast<int>(buffer.size()), &index)) && buffer.back() == 0 && buffer[0])
-        return extract(expand(buffer.data()), index, size, icon);
+        if(extract(expand(buffer.data()), index, size, icon))return true;
     std::fill(buffer.begin(), buffer.end(), L'\0');
     if (FAILED(link->GetPath(buffer.data(), static_cast<int>(buffer.size()), nullptr, SLGP_RAWPATH)) || buffer.back() != 0) return false;
     const auto target = expand(buffer.data());
-    return executable(target) && extract(target, 0, size, icon);
+    if(executable(target)&&extract(target,0,size,icon))return true;
+    if(!target.empty()&&!target.starts_with(L"\\\\")){
+        const auto attributes=GetFileAttributesW(target.c_str());
+        if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY)){
+            SHSTOCKICONINFO stock{sizeof(stock)};
+            if(SUCCEEDED(SHGetStockIconInfo(SIID_FOLDER,SHGSI_ICON|SHGSI_LARGEICON,&stock))){icon.value=stock.hIcon;return icon.value!=nullptr;}
+        }
+    }
+    return false;
+}
+bool internetIcon(const std::wstring& path,unsigned size,Icon& icon){
+    std::array<wchar_t,32768> location{};
+    const auto count=GetPrivateProfileStringW(L"InternetShortcut",L"IconFile",L"",location.data(),static_cast<DWORD>(location.size()),path.c_str());
+    if(count>0&&count<location.size()-1){const auto index=static_cast<int>(GetPrivateProfileIntW(L"InternetShortcut",L"IconIndex",0,path.c_str()));
+        if(extract(expand(location.data()),index,size,icon))return true;}
+    SHSTOCKICONINFO stock{sizeof(stock)};
+    if(SUCCEEDED(SHGetStockIconInfo(SIID_WORLD,SHGSI_ICON|SHGSI_LARGEICON,&stock))){icon.value=stock.hIcon;return icon.value!=nullptr;}
+    return false;
 }
 // Fits `source` (width x height) into a centred size x size square of tight
 // straight RGBA (Fant: area averaging, no overshoot). An icon resource scales
@@ -213,7 +266,9 @@ AppShortcutIconExtractor windowsAppShortcutIconExtractor(AppShortcutPackagedLogo
             }
             const auto path = wide(selection.value);
             Icon icon;
-            const bool found = executable(path) ? extract(path, 0, size, icon) : linkIcon(path, size, icon);
+            const auto extension=std::filesystem::path(path).extension().wstring();
+            const bool internet=CompareStringOrdinal(extension.c_str(),-1,L".url",-1,TRUE)==CSTR_EQUAL;
+            const bool found = executable(path) ? extract(path, 0, size, icon) : internet?internetIcon(path,size,icon):linkIcon(path, size, icon);
             if (!found) return {};
             return pixels(icon.value, size);
         } catch (const std::bad_alloc&) {

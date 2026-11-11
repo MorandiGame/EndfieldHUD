@@ -1,6 +1,7 @@
 #pragma once
 #include "app/utility_executor.hpp"
 #include "modules/app_shortcut_relink.hpp"
+#include "modules/desktop_shortcut_sync.hpp"
 #include "native/app_shortcut_service.hpp"
 
 namespace endfield::modules {
@@ -27,6 +28,8 @@ struct ShortcutTaskResult {
     // committed file; the next load reconciles again.
     std::optional<ShortcutRelinkSync> relink;
     bool relinkFailed{};
+    std::optional<DesktopShortcutSyncResult> desktopSync;
+    bool desktopSyncFailed{};
 };
 // One borrowed FIFO owns repository and explicit OS transactions. submit keeps
 // at most one immutable request if that FIFO is full; retry only on a completion
@@ -40,7 +43,7 @@ class AppShortcutTasks final {
 public:
     using Completion=std::function<void(ShortcutTaskResult)>;
     AppShortcutTasks(app::UtilityExecutor&,std::filesystem::path,ShortcutTextRules,
-                    native::AppShortcutOS,Completion,std::filesystem::path relinkRoot={});
+                    native::AppShortcutOS,Completion,std::filesystem::path relinkRoot={},DesktopShortcutScanner desktop={});
     ~AppShortcutTasks();
     AppShortcutTasks(const AppShortcutTasks&)=delete;
     AppShortcutTasks&operator=(const AppShortcutTasks&)=delete;
