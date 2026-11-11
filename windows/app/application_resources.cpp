@@ -1,4 +1,5 @@
 #include "app/application_impl.hpp"
+#include "app/desktop_window_visibility.hpp"
 #include <cwchar>
 #include <dwmapi.h>
 
@@ -27,17 +28,17 @@ bool desktopContext(HWND hud, POINT mouse, bool shown) {
     if(!desktopWindow(foreground)&&!taskbarWindow(foreground)&&!(shown&&ownWindow(foreground)))return false;
     // Taskbar use must never summon the HUD. Hiding only cares about the
     // backdrop, so leaving a stationary pointer on the bar is still idle.
-    if(!shown&&!desktopWindow(pointed))return false;
     // Look through our own overlay. An app underneath any part of the HUD
     // means its background is not the desktop; other monitors do not count.
     RECT area{};MONITORINFO monitor{sizeof(monitor)};
     if(!GetWindowRect(hud,&area)||!GetMonitorInfoW(MonitorFromWindow(hud,MONITOR_DEFAULTTONEAREST),&monitor))return false;
     if(!IntersectRect(&area,&area,&monitor.rcWork))return false;
+    if(!shown&&!desktopWindow(pointed)&&!(PtInRect(&area,mouse)&&desktopNonBlockingOverlay(pointed)))return false;
     struct Probe {RECT area;unsigned visited{};bool blocked{};} probe{area};
     const auto visit=[](HWND window,LPARAM value)->BOOL {
         auto& p=*reinterpret_cast<Probe*>(value);
         if(++p.visited>4096){p.blocked=true;return FALSE;}
-        if(ownWindow(window)||!IsWindowVisible(window)||IsIconic(window)||desktopWindow(window))return TRUE;
+        if(ownWindow(window)||!IsWindowVisible(window)||IsIconic(window)||desktopWindow(window)||desktopNonBlockingOverlay(window))return TRUE;
         DWORD cloaked{};
         if(SUCCEEDED(DwmGetWindowAttribute(window,DWMWA_CLOAKED,&cloaked,sizeof(cloaked)))&&cloaked)return TRUE;
         if(taskbarWindow(window))return TRUE;
@@ -52,7 +53,7 @@ void Application::Impl::scheduleDesktopPresence(double time){
     const auto policy=ResourcePolicy::from(configuration);
     const bool shown=session->phase()!=core::VisibilityPhase::concealed;
     const bool wanted=production()&&!suspensions&&!projectionHandoff.active()&&!projectionShown()&&
-        policy.idleSeconds>0&&(shown||(policy.desktopResume&&desktopPresence.automatic()));
+        policy.observesPresence(shown);
     if(!wanted){presenceWake.reset();desktopPresence.pause();return;}
     if(!presenceWake)presenceWake=time+1;
 }
@@ -71,11 +72,12 @@ void Application::Impl::sampleDesktopPresence(double time){
     const bool desktop=canAct&&desktopContext(static_cast<HWND>(host.hwnd()),mouse,shown);
     const auto action=desktopPresence.sample(ResourcePolicy::from(configuration),time,idle,moved,desktop,shown,canAct);
     if(action==DesktopPresence::Action::hide){
+        const auto desktopInterval=desktopPresence;
         perform(lifecycle.close(),time);
-        // close() clears automatic intent for ordinary user closes. Re-arm only
-        // after the close was accepted; a refusing editor remains visible.
+        // close() resets presence for a manual close. An accepted idle close
+        // continues the same uninterrupted desktop-away interval.
         if(closing||session->phase()==core::VisibilityPhase::concealed){
-            desktopPresence.hiddenAutomatically();
+            desktopPresence=desktopInterval;
         }else desktopPresence.dismissed();
     }else if(action==DesktopPresence::Action::reveal){
         perform(lifecycle.openOverlay(),time);

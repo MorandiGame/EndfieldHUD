@@ -793,5 +793,6 @@ void Application::Impl::resume(Suspension reason,double time){
     if(workMode)isolate(workModeModuleOwner,"resume",[&]{workMode->setSuspended(false,hostTime(time));});
     if(systemServices)systemServices->refresh_battery();recordBattery();updateTrayMenu();
     broadcast(HostEvent::Kind::resumed,time,static_cast<std::uint32_t>(reason));
+    scheduleDeadline(); // A hidden HUD resumes desktop-away observation too.
 }
 } // namespace endfield::app

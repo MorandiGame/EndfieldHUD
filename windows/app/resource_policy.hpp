@@ -7,8 +7,9 @@
 namespace endfield::app {
 // Fork preferences are optional so upstream and older settings remain readable.
 struct ResourcePolicy {
-    double idleSeconds{60}, releaseSeconds{1}, frameRate{60};
+    double idleSeconds{60}, wakeIdleSeconds{30}, releaseSeconds{1}, frameRate{60};
     bool desktopResume{true}, pauseTelemetry{true};
+    bool observesPresence(bool shown) const { return idleSeconds>0 && (shown||desktopResume); }
     static ResourcePolicy from(const ehud::data::Settings& s) {
         ResourcePolicy p;
         const auto number = [&](const char* key, double fallback, double maximum) {
@@ -30,32 +31,34 @@ struct ResourcePolicy {
 class DesktopPresence {
 public:
     enum class Action { none, hide, reveal };
-    void opened(double now) { openedAt_ = now; automatic_ = false; pause(); }
-    void dismissed() { automatic_ = false; pause(); }
-    void pause() { desktopSince_.reset(); }
-    void hiddenAutomatically() { automatic_ = true; }
-    bool automatic() const { return automatic_; }
+    void opened(double now) { openedAt_ = now; pause(); }
+    void dismissed() { pause(); }
+    void pause() { desktopSince_.reset(); wakeArmed_ = false; }
+    bool wakeArmed() const { return wakeArmed_; }
     Action sample(const ResourcePolicy& p, double now, double idle, bool moved,
                   bool desktop, bool shown, bool canAct) {
         if (p.idleSeconds <= 0) { dismissed(); return Action::none; }
         // Time spent in another application, a modal or a suspended session
         // never contributes to the desktop's automatic-hide deadline.
-        if (!desktop || !shown || !canAct) pause();
-        else if (!desktopSince_) desktopSince_ = now;
-        if (!canAct) return Action::none;
-        if (automatic_) {
-            if (!shown && p.desktopResume && moved && desktop && idle < 2) {
-                automatic_ = false; return Action::reveal;
-            }
-        } else if (shown && desktop && desktopSince_ && idle >= p.idleSeconds &&
+        if (!desktop || !canAct) { pause(); return Action::none; }
+        if (!desktopSince_) desktopSince_ = now;
+        // The away interval must have completed on an earlier sample. A
+        // hidden launch or a manual close starts the same waiting sequence;
+        // ordinary desktop motion must never summon the HUD immediately.
+        if (!shown && p.desktopResume && wakeArmed_ && moved && idle < 2) {
+            pause(); return Action::reveal;
+        }
+        wakeArmed_ = p.desktopResume && idle >= p.wakeIdleSeconds &&
+                     now - *desktopSince_ >= p.wakeIdleSeconds;
+        if (shown && idle >= p.idleSeconds &&
                    now - std::max(openedAt_, *desktopSince_) >= p.idleSeconds) {
-            automatic_ = true; return Action::hide;
+            return Action::hide;
         }
         return Action::none;
     }
 private:
     double openedAt_{};
     std::optional<double> desktopSince_;
-    bool automatic_{};
+    bool wakeArmed_{};
 };
 }
